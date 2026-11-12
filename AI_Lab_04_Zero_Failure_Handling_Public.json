@@ -1,0 +1,351 @@
+{
+  "name": "AI Lab 04 - Zero-Failure Handling",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "\nconst testCases = [\n  {\n    id: 1,\n    customer_message: \"I was charged twice this month. Please refund me.\",\n    expected_category: \"Billing\"\n  },\n  {\n    id: 2,\n    customer_message: \"My invoice shows an incorrect amount.\",\n    expected_category: \"Billing\"\n  },\n  {\n    id: 3,\n    customer_message: \"What are the prices for your premium plans?\",\n    expected_category: \"Sales\"\n  },\n  {\n    id: 4,\n    customer_message: \"I want to purchase 20 licenses for my company.\",\n    expected_category: \"Sales\"\n  },\n  {\n    id: 5,\n    customer_message: \"I cannot log in after resetting my password.\",\n    expected_category: \"Support\"\n  },\n  {\n    id: 6,\n    customer_message: \"Your application crashes whenever I open it.\",\n    expected_category: \"Support\"\n  },\n  {\n    id: 7,\n    customer_message: \"Thank you for your excellent service!\",\n    expected_category: \"Other\"\n  },\n  {\n    id: 8,\n    customer_message: \"Happy holidays to your entire team!\",\n    expected_category: \"Other\"\n  },\n  {\n    id: 9,\n    customer_message: \"I cannot access my account, but I am still being charged monthly.\",\n    expected_category: \"Billing\"\n  },\n  {\n    id: 10,\n    customer_message: \"My subscription payment failed and now I cannot log in.\",\n    expected_category: \"Billing\"\n  }\n];\n\n\ntestCases.push(\n  {\n    id: 11,\n    customer_message: \"I don't need a refund. I just need help signing in after resetting my password.\",\n    expected_category: \"Support\"\n  },\n  {\n    id: 12,\n    customer_message: \"We already use your software. How much would upgrading 50 licenses cost?\",\n    expected_category: \"Sales\"\n  },\n  {\n    id: 13,\n    customer_message: \"Your application keeps crashing, and I was charged again after canceling my subscription.\",\n    expected_category: \"Billing\"\n  },\n  {\n    id: 14,\n    customer_message: \"I just wanted to thank your support team. Everything works perfectly!\",\n    expected_category: \"Other\"\n  },\n  {\n    id: 15,\n    customer_message: \"I was charjed twise for my subscription. Can you fix the payment?\",\n    expected_category: \"Billing\"\n  }\n);\n\n\nreturn testCases.map(testCase => ({\n  json: testCase\n}));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1328,
+        -16
+      ],
+      "id": "4063b8eb-77c2-4140-a132-d54d6a7370d9",
+      "name": "15 Test Cases"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1328,
+        -304
+      ],
+      "id": "3b6b9952-72a8-4ebb-bdfe-a86d6ea178e1",
+      "name": "Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst predictions = $input.all();\nconst totalCases = $(\"15 Test Cases\").all().length;\n\n\nif (predictions.length === 0 || predictions.length > totalCases) {\n  throw new Error(\n    `Invalid prediction count: ${predictions.length} for ${totalCases} test cases`\n  );\n}\n\n\nconst validCategories = [\n  \"Billing\", \"Sales\", \"Support\", \"Other\"\n];\n\nconst results = predictions.map((item, index) => {\n  const testCase = $(\"15 Test Cases\").itemMatching(index).json;\n\n  const raw =\n    item.json.output?.[0]?.content?.[0]?.text;\n\n  let predicted = raw?.category;\n\n  if (typeof raw === \"string\") {\n    try {\n      predicted = JSON.parse(raw).category;\n    } catch {\n      predicted = null;\n    }\n  }\n\n  const correct =\n    validCategories.includes(predicted) &&\n    predicted === testCase.expected_category;\n\n  return {\n    id: testCase.id,\n    customer_message: testCase.customer_message,\n    expected_category: testCase.expected_category,\n    predicted_category: predicted ?? \"Invalid\",\n    correct\n  };\n});\n\nconst total = results.length;\nconst correct = results.filter(r => r.correct).length;\nconst incorrect = total - correct;\n\nconst accuracy = total > 0\n  ? Number(((correct / total) * 100).toFixed(2))\n  : 0;\n\nreturn [{\n  json: {\n    total,\n    correct,\n    incorrect,\n    accuracy_percent: accuracy,\n    results\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -464,
+        96
+      ],
+      "id": "8bdf52e6-0cde-4551-8c10-004502e43814",
+      "name": "Evaluate Predictions"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst evaluation = $input.first().json;\nconst results = evaluation.results;\n\nif (!Array.isArray(results)) {\n  throw new Error(\"Evaluation results not found\");\n}\n\nconst categories = [\n  \"Billing\",\n  \"Sales\",\n  \"Support\",\n  \"Other\"\n];\n\nconst categoryMetrics = categories.map(category => {\n  const expected = results.filter(\n    r => r.expected_category === category\n  );\n\n  const predicted = results.filter(\n    r => r.predicted_category === category\n  );\n\n  const correct = expected.filter(\n    r => r.predicted_category === category\n  ).length;\n\n  const precision = predicted.length > 0\n    ? correct / predicted.length\n    : 0;\n\n  const recall = expected.length > 0\n    ? correct / expected.length\n    : 0;\n\n  const f1 = precision + recall > 0\n    ? (2 * precision * recall) / (precision + recall)\n    : 0;\n\n  return {\n    category,\n    expected_count: expected.length,\n    predicted_count: predicted.length,\n    correct,\n    precision_percent: Number(\n      (precision * 100).toFixed(2)\n    ),\n    recall_percent: Number(\n      (recall * 100).toFixed(2)\n    ),\n    f1_percent: Number(\n      (f1 * 100).toFixed(2)\n    )\n  };\n});\n\nreturn [{\n  json: {\n    total: evaluation.total,\n    overall_accuracy_percent:\n      evaluation.accuracy_percent,\n    category_metrics: categoryMetrics\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -272,
+        -128
+      ],
+      "id": "924ea552-12ce-426c-8c4d-2c3bfeb9640f",
+      "name": "Category Metrics"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst evaluation = $(\"Evaluate Predictions\").first().json;\nconst results = evaluation.results;\n\nif (!Array.isArray(results)) {\n  throw new Error(\"Evaluation results not found\");\n}\n\nconst categories = [\n  \"Billing\",\n  \"Sales\",\n  \"Support\",\n  \"Other\"\n];\n\nconst matrix = {};\n\nfor (const actual of categories) {\n  matrix[actual] = {};\n\n  for (const predicted of categories) {\n    matrix[actual][predicted] = 0;\n  }\n}\n\nfor (const result of results) {\n  const actual = result.expected_category;\n  const predicted = result.predicted_category;\n\n  if (\n    !categories.includes(actual) ||\n    !categories.includes(predicted)\n  ) {\n    throw new Error(\n      `Invalid category in test ${result.id}`\n    );\n  }\n\n  matrix[actual][predicted]++;\n}\n\nreturn [{\n  json: {\n    total: results.length,\n    accuracy_percent: evaluation.accuracy_percent,\n    confusion_matrix: matrix\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -80,
+        80
+      ],
+      "id": "5f2804af-c2a5-4655-ac66-12ff4386248b",
+      "name": "Confusion Matrix"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst evaluation = $(\"Evaluate Predictions\").first().json;\nconst metrics = $(\"Category Metrics\").first().json;\nconst matrixData = $input.first().json;\n\nconst model = \"Not invoked (simulated predictions)\";\nconst evaluatedAt = new Date().toISOString();\n\nconst categories = [\n  \"Billing\",\n  \"Sales\",\n  \"Support\",\n  \"Other\"\n];\n\nif (\n  !Array.isArray(evaluation.results) ||\n  !Array.isArray(metrics.category_metrics) ||\n  !matrixData.confusion_matrix\n) {\n  throw new Error(\"Missing evaluation data\");\n}\n\nconst failedCases = evaluation.results.filter(\n  result => !result.correct\n);\n\nconst report = [];\n\nreport.push(\"# AI Classification Evaluation Report\");\nreport.push(\"\");\nreport.push(`Evaluation date (UTC): ${evaluatedAt}`);\nreport.push(`Model: ${model}`);\nreport.push(\"Workflow: AI Lab 04 - Zero-Failure Handling\");\nreport.push(\"\");\n\nreport.push(\"## Overall Results\");\nreport.push(\"\");\nreport.push(`Total test cases: ${evaluation.total}`);\nreport.push(`Correct predictions: ${evaluation.correct}`);\nreport.push(`Incorrect predictions: ${evaluation.incorrect}`);\nreport.push(`Accuracy: ${evaluation.accuracy_percent}%`);\nreport.push(\"\");\n\nreport.push(\"## Category Performance\");\nreport.push(\"\");\nreport.push(\"| Category | Cases | Precision | Recall | F1 |\");\nreport.push(\"|---|---:|---:|---:|---:|\");\n\nfor (const m of metrics.category_metrics) {\n  report.push(\n    `| ${m.category} | ${m.expected_count} | ` +\n    `${m.precision_percent}% | ` +\n    `${m.recall_percent}% | ${m.f1_percent}% |`\n  );\n}\n\nreport.push(\"\");\nreport.push(\"## Confusion Matrix\");\nreport.push(\"\");\nreport.push(\"Rows = actual category; columns = predicted category.\");\nreport.push(\"\");\nreport.push(\"| Actual | Billing | Sales | Support | Other |\");\nreport.push(\"|---|---:|---:|---:|---:|\");\n\nfor (const actual of categories) {\n  const row = matrixData.confusion_matrix[actual];\n\n  report.push(\n    `| ${actual} | ` +\n    categories.map(c => row[c]).join(\" | \") +\n    \" |\"\n  );\n}\n\nreport.push(\"\");\nreport.push(\"## Failed Test Cases\");\nreport.push(\"\");\n\nif (failedCases.length === 0) {\n  report.push(\"No classification errors detected.\");\n} else {\n  for (const test of failedCases) {\n    report.push(`### Test ${test.id}`);\n    report.push(`Message: ${test.customer_message}`);\n    report.push(`Expected: ${test.expected_category}`);\n    report.push(`Predicted: ${test.predicted_category}`);\n    report.push(\"\");\n  }\n}\n\nreport.push(\"\");\nreport.push(\"## Evaluation Limitations\");\nreport.push(\"\");\nreport.push(\"- Small, manually designed test dataset.\");\nreport.push(\"- Results do not guarantee production accuracy.\");\nreport.push(\"- Real-world customer messages require further testing.\");\nreport.push(\"- API reliability and latency are not evaluated.\");\nreport.push(\"- Future prompt or model changes require regression tests.\");\n\nreturn [{\n  json: {\n    report_generated_at: evaluatedAt,\n    model,\n    total: evaluation.total,\n    accuracy_percent: evaluation.accuracy_percent,\n    failed_cases: failedCases,\n    report_markdown: report.join(\"\\n\")\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        128,
+        64
+      ],
+      "id": "14a9b85e-df6f-42e3-abcd-8bc79f093f4d",
+      "name": "Evaluation Report"
+    },
+    {
+      "parameters": {
+        "operation": "toText",
+        "sourceProperty": "report_markdown",
+        "options": {
+          "encoding": "utf8",
+          "fileName": "AI_Lab_04_Zero_Failure_Simulation_2026-11-12.md"
+        }
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        576,
+        -128
+      ],
+      "id": "9e3d0257-9538-43f5-ac02-761dc3f3c96c",
+      "name": "Export Evaluation Report"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst incoming = $input.all();\n\n// Identify genuine error records.\nconst failures = incoming\n  .map((item, index) => ({ item, index }))\n  .filter(({ item }) =>\n    item.json?.error !== undefined &&\n    item.json?.error !== null\n  );\n\n// No errors: emit a marker so downstream nodes can run.\nif (failures.length === 0) {\n  return [{\n    json: {\n      event_type: \"no_api_failures\"\n    }\n  }];\n}\n\n// Process genuine failures.\nreturn failures.map(({ item, index }) => {\n  let testCase = null;\n\n  try {\n    testCase = $(\"15 Test Cases\").itemMatching(index).json;\n  } catch (error) {\n    // Preserve the failure even without item linking.\n  }\n\n  const rawError = item.json.error;\n\n  const errorMessage =\n    typeof rawError === \"string\"\n      ? rawError\n      : rawError?.message ??\n        item.json.message ??\n        \"Unknown OpenAI API error\";\n\n  return {\n    json: {\n      event_type: \"api_failure\",\n      test_id: testCase?.id ?? item.json.id ?? null,\n      customer_message:\n        testCase?.customer_message ??\n        item.json.customer_message ??\n        null,\n      expected_category:\n        testCase?.expected_category ??\n        item.json.expected_category ??\n        null,\n      error_message: String(errorMessage),\n      captured_at: new Date().toISOString()\n    },\n    pairedItem: { item: index }\n  };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -608,
+        -272
+      ],
+      "id": "0b74c5d1-c4f7-46f4-9c29-8a6474504658",
+      "name": "Capture API Failures"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst records = $input.all().map(item => item.json);\n\nconst categories = [\n  \"Billing\",\n  \"Sales\",\n  \"Support\",\n  \"Other\"\n];\n\nconst failuresByCategory = Object.fromEntries(\n  categories.map(category => [category, 0])\n);\n\n// Accept the no-failures marker without counting it.\nconst failures = [];\n\nfor (const record of records) {\n  if (record.event_type === \"no_api_failures\") {\n    continue;\n  }\n\n  if (record.event_type !== \"api_failure\") {\n    throw new Error(\"Unexpected input record\");\n  }\n\n  failures.push(record);\n}\n\nlet unknownCategoryCount = 0;\n\nfor (const failure of failures) {\n  if (categories.includes(failure.expected_category)) {\n    failuresByCategory[failure.expected_category]++;\n  } else {\n    unknownCategoryCount++;\n  }\n}\n\nconst affectedTestIds = [\n  ...new Set(\n    failures\n      .map(f => f.test_id)\n      .filter(id => id !== null && id !== undefined)\n  )\n];\n\nreturn [{\n  json: {\n    event_type: \"api_failure_summary\",\n    total_api_failures: failures.length,\n    failures_by_category: failuresByCategory,\n    unknown_category_count: unknownCategoryCount,\n    affected_test_ids: affectedTestIds,\n    failure_details: failures.map(f => ({\n      test_id: f.test_id,\n      expected_category: f.expected_category,\n      error_message: f.error_message,\n      captured_at: f.captured_at\n    })),\n    summary_generated_at: new Date().toISOString()\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -384,
+        -272
+      ],
+      "id": "51df72d6-7231-4d2c-93e6-aead8767cad0",
+      "name": "API Failure Summary"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst testCases = $(\"15 Test Cases\").all().map(item => item.json);\nconst evaluation = $(\"Evaluate Predictions\").first().json;\nconst report = $input.first().json;\n\nif (!Array.isArray(evaluation.results)) {\n  throw new Error(\"Missing evaluation results\");\n}\n\nconst totalExpected = testCases.length;\n\nif (totalExpected === 0) {\n  throw new Error(\"No test cases found\");\n}\n\nconst expectedIds = testCases.map(test => String(test.id));\n\nif (new Set(expectedIds).size !== totalExpected) {\n  throw new Error(\"Duplicate test case IDs\");\n}\n\nconst predictionIds = evaluation.results.map(result => {\n  if (result.id === null || result.id === undefined) {\n    throw new Error(\"Prediction missing test ID\");\n  }\n  return String(result.id);\n});\n\nconst predictedIds = new Set(predictionIds);\n\nif (predictedIds.size !== predictionIds.length) {\n  throw new Error(\"Duplicate prediction IDs\");\n}\n\nfor (const id of predictedIds) {\n  if (!expectedIds.includes(id)) {\n    throw new Error(`Unexpected prediction ID: ${id}`);\n  }\n}\n\nconst completed = predictedIds.size;\n\nconst missingTestIds = testCases\n  .filter(test => !predictedIds.has(String(test.id)))\n  .map(test => test.id);\n\nconst coveragePercent = Number(\n  ((completed / totalExpected) * 100).toFixed(2)\n);\n\nconst coverageStatus =\n  completed === totalExpected ? \"complete\" : \"partial\";\n\nconst coverageSection = [\n  \"\",\n  \"## Evaluation Coverage\",\n  \"\",\n  `Expected test cases: ${totalExpected}`,\n  `Completed predictions: ${completed}`,\n  `Missing predictions: ${missingTestIds.length}`,\n  `Evaluation coverage: ${coveragePercent}%`,\n  `Coverage status: ${coverageStatus}`,\n  \"\",\n  \"Missing test IDs: \" +\n    (missingTestIds.length\n      ? missingTestIds.join(\", \")\n      : \"None\"),\n  \"\",\n  \"Missing predictions require investigation.\",\n  \"They are not automatically classified as API failures.\"\n].join(\"\\n\");\n\nreturn [{\n  json: {\n    ...report,\n    expected_test_cases: totalExpected,\n    completed_predictions: completed,\n    missing_predictions: missingTestIds.length,\n    missing_test_ids: missingTestIds,\n    evaluation_coverage_percent: coveragePercent,\n    coverage_status: coverageStatus,\n    report_markdown:\n      report.report_markdown + \"\\n\" + coverageSection\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        80
+      ],
+      "id": "f178c307-9e36-4faf-b497-85fc972f6436",
+      "name": "Evaluation Coverage"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst testCases = $input.all();\n\nif (testCases.length !== 15) {\n  throw new Error(\n    `Expected 15 test cases, received ${testCases.length}`\n  );\n}\n\n// Simulate successful predictions for all 15 cases.\n// \n\nconst successfulCases = testCases;\n\nreturn successfulCases.map((item, index) => ({\n  json: {\n    output: [\n      {\n        type: \"message\",\n        status: \"completed\",\n        content: [\n          {\n            type: \"output_text\",\n            text: {\n              category: item.json.expected_category\n            }\n          }\n        ]\n      }\n    ]\n  },\n  pairedItem: {\n    item: index\n  }\n}));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1072,
+        -16
+      ],
+      "id": "115701d3-280f-4b02-9035-21eac616179f",
+      "name": "Simulate All Predictions"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst testCases = $input.all();\n\nif (testCases.length !== 15) {\n  throw new Error(\n    `Expected 15 test cases, received ${testCases.length}`\n  );\n}\n\n// Simulate zero API failures.\nreturn [];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1072,
+        176
+      ],
+      "id": "8fb5a132-c3c9-4c95-95fa-4f21d30c0e24",
+      "name": "Simulate Zero API Failures",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        32,
+        -304
+      ],
+      "id": "a0135220-cbb7-4894-8cff-430d8b568b1f",
+      "name": "Merge Evaluation Results"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst data = $input.first().json;\n\nconst missingIds = data.missing_test_ids ?? [];\nconst failureIds = data.affected_test_ids ?? [];\nconst failureDetails = data.failure_details ?? [];\nconst byCategory = data.failures_by_category ?? {};\n\nif (!data.report_markdown) {\n  throw new Error(\"Evaluation report is missing\");\n}\n\nif (\n  data.completed_predictions + data.missing_predictions !==\n  data.expected_test_cases\n) {\n  throw new Error(\"Evaluation counts do not match\");\n}\n\nif (missingIds.length !== data.missing_predictions) {\n  throw new Error(\"Missing prediction IDs do not match count\");\n}\n\nif (\n  failureIds.length !== data.total_api_failures ||\n  failureDetails.length !== data.total_api_failures\n) {\n  throw new Error(\"API failure counts do not match\");\n}\n\n// Reconcile missing predictions with simulated API failures.\nconst missingSet = new Set(missingIds.map(String));\nconst failureSet = new Set(failureIds.map(String));\n\nif (failureSet.size !== failureIds.length) {\n  throw new Error(\"Duplicate API failure IDs\");\n}\n\nconst unmatchedFailures = failureIds.filter(\n  id => !missingSet.has(String(id))\n);\n\nif (unmatchedFailures.length > 0) {\n  throw new Error(\n    `API failures without missing predictions: ${unmatchedFailures}`\n  );\n}\n\nconst unexplainedMissing = missingIds.filter(\n  id => !failureSet.has(String(id))\n);\n\nconst lines = [\n  \"## Simulated API Failure Analysis\",\n  \"\",\n  `Simulated API failures: ${data.total_api_failures}`,\n  `Missing predictions: ${data.missing_predictions}`,\n  `Failures matching missing predictions: ${failureIds.length}`,\n  `Unexplained missing predictions: ${unexplainedMissing.length}`,\n  \"\",\n  \"### Failures by Category\",\n  \"\",\n  \"| Category | Failures |\",\n  \"|---|---:|\",\n  ...[\"Billing\", \"Sales\", \"Support\", \"Other\"].map(\n    category => `| ${category} | ${byCategory[category] ?? 0} |`\n  ),\n  \"\",\n  `Unknown categories: ${data.unknown_category_count ?? 0}`,\n  \"\",\n  \"### Affected Test Cases\",\n  \"\",\n  ...failureDetails.map(\n    f => `- Test ${f.test_id}: ${f.expected_category} — ${f.error_message}`\n  ),\n  \"\",\n  \"### Unexplained Missing Predictions\",\n  \"\",\n  unexplainedMissing.length\n    ? unexplainedMissing.join(\", \")\n    : \"None\",\n  \"\",\n  \"### Evaluation Interpretation\",\n  \"\",\n  `Classification accuracy: ${data.accuracy_percent}%`,\n  `Evaluation coverage: ${data.evaluation_coverage_percent}%`,\n  \"\",\n  \"This is a controlled simulation, not a production reliability measurement.\",\n  \"Predictions were generated from expected labels.\",\n  \"API failures were simulated rather than produced by OpenAI.\"\n];\n\nconst originalReport = data.report_markdown.replace(\n  /^Model:\\s*.*$/m,\n  \"Model: Not invoked (simulated predictions)\"\n);\n\nconst reportMarkdown = [\n  \"> **SIMULATION ONLY — No real OpenAI API calls were made in this evaluation.**\",\n  \"\",\n  originalReport,\n  \"\",\n  lines.join(\"\\n\")\n].join(\"\\n\");\n\nreturn [{\n  json: {\n    ...data,\n    evaluation_mode: \"simulation\",\n    reconciled_api_failures: failureIds.length,\n    unexplained_missing_predictions: unexplainedMissing.length,\n    unexplained_missing_test_ids: unexplainedMissing,\n    report_markdown: reportMarkdown\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        384,
+        -304
+      ],
+      "id": "da173467-c5ad-4e63-aacf-3d37564a7830",
+      "name": "Unified Evaluation Report"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "15 Test Cases": {
+      "main": [
+        [
+          {
+            "node": "Simulate All Predictions",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Simulate Zero API Failures",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger": {
+      "main": [
+        [
+          {
+            "node": "15 Test Cases",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Predictions": {
+      "main": [
+        [
+          {
+            "node": "Category Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Category Metrics": {
+      "main": [
+        [
+          {
+            "node": "Confusion Matrix",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confusion Matrix": {
+      "main": [
+        [
+          {
+            "node": "Evaluation Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluation Report": {
+      "main": [
+        [
+          {
+            "node": "Evaluation Coverage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Capture API Failures": {
+      "main": [
+        [
+          {
+            "node": "API Failure Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluation Coverage": {
+      "main": [
+        [
+          {
+            "node": "Merge Evaluation Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Simulate All Predictions": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Predictions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simulate Zero API Failures": {
+      "main": [
+        [
+          {
+            "node": "Capture API Failures",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API Failure Summary": {
+      "main": [
+        [
+          {
+            "node": "Merge Evaluation Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Evaluation Results": {
+      "main": [
+        [
+          {
+            "node": "Unified Evaluation Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Unified Evaluation Report": {
+      "main": [
+        [
+          {
+            "node": "Export Evaluation Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "nodeGroups": [],
+  "tags": []
+}
